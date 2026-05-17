@@ -4,6 +4,7 @@ python train.py \
 --client_num 4 \
 --c_rounds 1000 \
 --round_per_train 100 \
---version ${time}_vesion \
---device_ids 0,1,2,3 \
---use_multiprocessing True \
+--version ${time}_version \
+--device_ids 0,0,0,0 \
+--gpus 0 \
+--use_multiprocessing False
