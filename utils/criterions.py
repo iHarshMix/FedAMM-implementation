@@ -234,7 +234,9 @@ def EMA_cls_Fs(prior_Fs, glb_protos):
         return glb_protos
     alpha = 0.999
     for key, value in prior_Fs.items():
-        glb_Fs = alpha * value.numpy() + (1-alpha)* glb_protos[key].numpy()
+        if value is None or glb_protos.get(key) is None:
+            continue
+        glb_Fs = alpha * value.numpy() + (1-alpha) * glb_protos[key].numpy()
         glb_protos[key] = torch.from_numpy(glb_Fs)
     return glb_protos
     
