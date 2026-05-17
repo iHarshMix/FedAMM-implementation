@@ -322,5 +322,8 @@ class Model(nn.Module):
                     kl_loss += mask * masks_mod3 * weight_prm * temp_kl_loss_bs(prm_pred_t2, prm_pred.detach(), target, num_cls=num_cls, temp=temp, up_op=up_op)
             gt = gt_prototype(de_f_avg[0].detach(), target, num_cls=num_cls)
 
-        return F.softmax(fuse_pred, dim=1), prm_loss, sep_loss, kl_loss, proto_loss, dist,gt
+        if self.is_training:
+            return F.softmax(fuse_pred, dim=1), prm_loss, sep_loss, kl_loss, proto_loss, dist, gt
+        else:
+            return F.softmax(fuse_pred, dim=1)
 
