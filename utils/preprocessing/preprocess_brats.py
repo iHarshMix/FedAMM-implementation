@@ -3,12 +3,16 @@ import os
 import medpy.io as medio
 import numpy as np
 
+# ── ONLY THESE TWO LINES CHANGED FROM ORIGINAL ──────────────────────────────
+# src_path: points to the actual case folders inside the Kaggle download
+# tar_path: points to our preprocessed output folder
 currentdirPath = os.path.dirname(os.path.abspath(__file__))
 relativePath = '../../datasets'
-datarootPath = os.path.abspath(os.path.join(currentdirPath,relativePath))
-## Note: or directly set datarootPath as your data-saving path (absolute root)
-src_path = os.path.join(datarootPath, 'BraTS/BRATS2020_Training_Data')
+datarootPath = os.path.abspath(os.path.join(currentdirPath, relativePath))
+
+src_path = os.path.join(datarootPath, 'BraTS/BRATS2020_Training_Data/BraTS2020_TrainingData/MICCAI_BraTS2020_TrainingData')
 tar_path = os.path.join(datarootPath, 'BraTS/BRATS2020_Training_none_npy')
+# ─────────────────────────────────────────────────────────────────────────────
 
 name_list = os.listdir(src_path)
 
@@ -57,31 +61,49 @@ if not os.path.exists(os.path.join(tar_path, 'vol')):
 if not os.path.exists(os.path.join(tar_path, 'seg')):
     os.makedirs(os.path.join(tar_path, 'seg'))
 
+skipped = []
+processed = 0
+
 for file_name in name_list:
-    print (file_name)
-    ### BraTS2020 Rename in RFNet
-    num = file_name.split('_')[2]
-    HLG = 'HG_' if int(num) <= 259 or int(num) >= 336 else 'LG_'
+    # ── try/except added to skip corrupt cases like BraTS20_Training_355 ────
+    try:
+        print(file_name)
+        ### BraTS2020 Rename in RFNet
+        num = file_name.split('_')[2]
+        HLG = 'HG_' if int(num) <= 259 or int(num) >= 336 else 'LG_'
 
-    flair, flair_header = medio.load(os.path.join(src_path, file_name, file_name+'_flair.nii.gz'))
-    t1ce, t1ce_header = medio.load(os.path.join(src_path, file_name, file_name+'_t1ce.nii.gz'))
-    t1, t1_header = medio.load(os.path.join(src_path, file_name, file_name+'_t1.nii.gz'))
-    t2, t2_header = medio.load(os.path.join(src_path, file_name, file_name+'_t2.nii.gz'))
+        # ── .nii.gz → .nii (Kaggle files are uncompressed) ──────────────────
+        flair, flair_header = medio.load(os.path.join(src_path, file_name, file_name+'_flair.nii'))
+        t1ce,  t1ce_header  = medio.load(os.path.join(src_path, file_name, file_name+'_t1ce.nii'))
+        t1,    t1_header    = medio.load(os.path.join(src_path, file_name, file_name+'_t1.nii'))
+        t2,    t2_header    = medio.load(os.path.join(src_path, file_name, file_name+'_t2.nii'))
+        # ─────────────────────────────────────────────────────────────────────
 
-    vol = np.stack((flair, t1ce, t1, t2), axis=0).astype(np.float32)
-    x_min, x_max, y_min, y_max, z_min, z_max = crop(vol)
-    vol1 = normalize(vol[:, x_min:x_max, y_min:y_max, z_min:z_max])
-    vol1 = vol1.transpose(1,2,3,0)
-    print (vol1.shape)
+        vol = np.stack((flair, t1ce, t1, t2), axis=0).astype(np.float32)
+        x_min, x_max, y_min, y_max, z_min, z_max = crop(vol)
+        vol1 = normalize(vol[:, x_min:x_max, y_min:y_max, z_min:z_max])
+        vol1 = vol1.transpose(1,2,3,0)
+        print(vol1.shape)
 
-    seg, seg_header = medio.load(os.path.join(src_path, file_name, file_name+'_seg.nii.gz'))
-    seg = seg.astype(np.uint8)
-    seg1 = seg[x_min:x_max, y_min:y_max, z_min:z_max]
-    seg1[seg1==4]=3
+        # ── .nii.gz → .nii ──────────────────────────────────────────────────
+        seg, seg_header = medio.load(os.path.join(src_path, file_name, file_name+'_seg.nii'))
+        # ─────────────────────────────────────────────────────────────────────
+        seg = seg.astype(np.uint8)
+        seg1 = seg[x_min:x_max, y_min:y_max, z_min:z_max]
+        seg1[seg1==4]=3
 
-    ### BraTS2020 Rename in RFNet
-    np.save(os.path.join(tar_path, 'vol', HLG+file_name+'_vol.npy'), vol1)
-    np.save(os.path.join(tar_path, 'seg', HLG+file_name+'_seg.npy'), seg1)
-    
-    # np.save(os.path.join(tar_path, 'vol', file_name+'_vol.npy'), vol1)
-    # np.save(os.path.join(tar_path, 'seg', file_name+'_seg.npy'), seg1)
+        ### BraTS2020 Rename in RFNet
+        np.save(os.path.join(tar_path, 'vol', HLG+file_name+'_vol.npy'), vol1)
+        np.save(os.path.join(tar_path, 'seg', HLG+file_name+'_seg.npy'), seg1)
+
+        processed += 1
+
+    except Exception as e:
+        print(f"SKIPPING {file_name}: {e}")
+        skipped.append(file_name)
+        continue
+    # ─────────────────────────────────────────────────────────────────────────
+
+print(f"\nDone. Processed: {processed}, Skipped: {len(skipped)}")
+if skipped:
+    print(f"Skipped cases: {skipped}")
