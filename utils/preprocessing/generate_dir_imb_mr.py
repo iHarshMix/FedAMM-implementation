@@ -25,11 +25,21 @@ def main():
          [True, True, True, True]]
     
     n_masks = len(masks_test) 
-    client_masks, client_mask_counts = generate_mask_distribution_only_maskid(
-        alpha=alpha,
-        modal_alpha=modal_alpha,
-        masks_test=masks_test
-    )
+    # samples_per_client set to match actual client sizes (64,65,65,65)
+    client_masks_list = []
+    client_mask_counts_list = []
+    for _n in [64, 65, 65, 65]:
+        _m, _c = generate_mask_distribution_only_maskid(
+            n_clients=1,
+            samples_per_client=_n,
+            alpha=alpha,
+            modal_alpha=modal_alpha,
+            masks_test=masks_test
+        )
+        client_masks_list.append(_m[0])
+        client_mask_counts_list.append(_c[0])
+    client_masks = np.array(client_masks_list, dtype=object)
+    client_mask_counts = np.array(client_mask_counts_list)
     if iid:
         client_masks_one = np.array([0]*3+[1]*3+[2]*3+[3]*3+[4]*3+[5]*4+[6]*4+[7]*4+[8]*4+[9]*4+[10]*4+[11]*4+[12]*4+[13]*4+[14]*4)
         client_masks = np.array([client_masks_one,client_masks_one,client_masks_one,client_masks_one])
@@ -216,7 +226,7 @@ def generate_mask_distribution_only_modal(n_clients=4, samples_per_client=55, n_
     
     return client_masks, client_mask_counts
 
-def generate_mask_distribution_only_maskid(n_clients=4, samples_per_client=55, n_masks=15, alpha=0.1, modal_alpha=0.05, masks_test=None):
+def generate_mask_distribution_only_maskid(n_clients=4, samples_per_client=65, n_masks=15, alpha=0.1, modal_alpha=0.05, masks_test=None):
     client_masks = [[] for _ in range(n_clients)]
     
     for client_id in range(n_clients):

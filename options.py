@@ -5,7 +5,7 @@ def args_parser():
     parser = argparse.ArgumentParser()
 
     parser.add_argument('--batch_size', default=1, type=int, help='Batch size')
-    parser.add_argument('--datapath', default=os.path.expanduser('~/datasets/BraTS/BRATS2020_Training_none_npy/'), type=str)
+    parser.add_argument('--datapath', default='./datasets/BraTS/BRATS2020_Training_none_npy/', type=str)
     parser.add_argument('--dataname', default='BRATS2020', type=str)
     parser.add_argument('--chose_modal', default='all', type=str)
     parser.add_argument('--num_class', default=4, type=int)
@@ -44,11 +44,11 @@ def args_parser():
     
     parser.add_argument('--train_file', type=dict, 
                 default={ 
-                1:"./datalist/dir_brats_split/maskid_dir_1024_0.001/client_part_1_imb.csv", 
-                2:"./datalist/dir_brats_split/maskid_dir_1024_0.001/client_part_2_imb.csv", 
-                3:"./datalist/dir_brats_split/maskid_dir_1024_0.001/client_part_3_imb.csv", 
-                4:"./datalist/dir_brats_split/maskid_dir_1024_0.001/client_part_4_imb.csv"})
-    parser.add_argument('--valid_file', type=str, default=os.path.expanduser("~/datasets/BraTS/BRATS2020_Training_none_npy/val.txt"))
+                1:"./datalist/dir_brats_split/1024_0.01/client_part_1_imb.csv", 
+                2:"./datalist/dir_brats_split/1024_0.01/client_part_2_imb.csv", 
+                3:"./datalist/dir_brats_split/1024_0.01/client_part_3_imb.csv", 
+                4:"./datalist/dir_brats_split/1024_0.01/client_part_4_imb.csv"})
+    parser.add_argument('--valid_file', type=str, default="./datalist/BRATS2020_Training_none_npy/val.txt")
     
     
     parser.add_argument('--test_file', type=str, default="./datalist/BRATS2020_Training_none_npy/test.txt")
