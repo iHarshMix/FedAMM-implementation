@@ -1,0 +1,66 @@
+data_name,mask_id,mask,pos_mask_ids
+HG_BraTS20_Training_004,1,"[False, True, False, False]",[1]
+HG_BraTS20_Training_005,2,"[False, False, True, False]",[2]
+HG_BraTS20_Training_008,2,"[False, False, True, False]",[2]
+HG_BraTS20_Training_009,2,"[False, False, True, False]",[2]
+HG_BraTS20_Training_015,2,"[False, False, True, False]",[2]
+HG_BraTS20_Training_021,2,"[False, False, True, False]",[2]
+HG_BraTS20_Training_022,2,"[False, False, True, False]",[2]
+HG_BraTS20_Training_023,14,"[True, True, True, True]","[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]"
+HG_BraTS20_Training_028,2,"[False, False, True, False]",[2]
+HG_BraTS20_Training_029,0,"[False, False, False, True]",[0]
+HG_BraTS20_Training_030,13,"[False, True, True, True]","[0, 1, 2, 4, 5, 7, 13]"
+HG_BraTS20_Training_032,2,"[False, False, True, False]",[2]
+HG_BraTS20_Training_037,2,"[False, False, True, False]",[2]
+HG_BraTS20_Training_048,2,"[False, False, True, False]",[2]
+HG_BraTS20_Training_058,9,"[True, True, False, False]","[1, 3, 9]"
+HG_BraTS20_Training_063,2,"[False, False, True, False]",[2]
+HG_BraTS20_Training_076,2,"[False, False, True, False]",[2]
+HG_BraTS20_Training_077,2,"[False, False, True, False]",[2]
+HG_BraTS20_Training_082,5,"[False, True, True, False]","[1, 2, 5]"
+HG_BraTS20_Training_088,2,"[False, False, True, False]",[2]
+HG_BraTS20_Training_091,2,"[False, False, True, False]",[2]
+HG_BraTS20_Training_105,2,"[False, False, True, False]",[2]
+HG_BraTS20_Training_118,2,"[False, False, True, False]",[2]
+HG_BraTS20_Training_122,2,"[False, False, True, False]",[2]
+HG_BraTS20_Training_158,2,"[False, False, True, False]",[2]
+HG_BraTS20_Training_161,2,"[False, False, True, False]",[2]
+HG_BraTS20_Training_162,1,"[False, True, False, False]",[1]
+HG_BraTS20_Training_167,1,"[False, True, False, False]",[1]
+HG_BraTS20_Training_169,2,"[False, False, True, False]",[2]
+HG_BraTS20_Training_174,2,"[False, False, True, False]",[2]
+HG_BraTS20_Training_176,2,"[False, False, True, False]",[2]
+HG_BraTS20_Training_177,12,"[True, True, False, True]","[0, 1, 3, 4, 8, 9, 12]"
+HG_BraTS20_Training_185,2,"[False, False, True, False]",[2]
+HG_BraTS20_Training_190,2,"[False, False, True, False]",[2]
+HG_BraTS20_Training_196,2,"[False, False, True, False]",[2]
+HG_BraTS20_Training_203,2,"[False, False, True, False]",[2]
+HG_BraTS20_Training_204,7,"[False, False, True, True]","[0, 2, 7]"
+HG_BraTS20_Training_210,2,"[False, False, True, False]",[2]
+HG_BraTS20_Training_218,2,"[False, False, True, False]",[2]
+HG_BraTS20_Training_221,2,"[False, False, True, False]",[2]
+HG_BraTS20_Training_233,2,"[False, False, True, False]",[2]
+HG_BraTS20_Training_235,2,"[False, False, True, False]",[2]
+HG_BraTS20_Training_238,2,"[False, False, True, False]",[2]
+HG_BraTS20_Training_239,2,"[False, False, True, False]",[2]
+HG_BraTS20_Training_242,1,"[False, True, False, False]",[1]
+HG_BraTS20_Training_252,3,"[True, False, False, False]",[3]
+HG_BraTS20_Training_257,2,"[False, False, True, False]",[2]
+HG_BraTS20_Training_356,2,"[False, False, True, False]",[2]
+HG_BraTS20_Training_361,10,"[True, True, True, False]","[1, 2, 3, 5, 6, 9, 10]"
+HG_BraTS20_Training_368,2,"[False, False, True, False]",[2]
+LG_BraTS20_Training_272,2,"[False, False, True, False]",[2]
+LG_BraTS20_Training_277,2,"[False, False, True, False]",[2]
+LG_BraTS20_Training_279,11,"[True, False, True, True]","[0, 2, 3, 6, 7, 8, 11]"
+LG_BraTS20_Training_280,2,"[False, False, True, False]",[2]
+LG_BraTS20_Training_284,2,"[False, False, True, False]",[2]
+LG_BraTS20_Training_299,2,"[False, False, True, False]",[2]
+LG_BraTS20_Training_300,2,"[False, False, True, False]",[2]
+LG_BraTS20_Training_302,8,"[True, False, False, True]","[0, 3, 8]"
+LG_BraTS20_Training_307,2,"[False, False, True, False]",[2]
+LG_BraTS20_Training_312,2,"[False, False, True, False]",[2]
+LG_BraTS20_Training_314,2,"[False, False, True, False]",[2]
+LG_BraTS20_Training_316,4,"[False, True, False, True]","[0, 1, 4]"
+LG_BraTS20_Training_329,1,"[False, True, False, False]",[1]
+LG_BraTS20_Training_332,2,"[False, False, True, False]",[2]
+LG_BraTS20_Training_333,6,"[True, False, True, False]","[2, 3, 6]"
