@@ -16,3 +16,6 @@ TBlog/
 # IDE
 .vscode/
 .idea/
+
+# Dataset files - never commit
+datasets/
