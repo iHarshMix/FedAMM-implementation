@@ -28,7 +28,7 @@ def args_parser():
     parser.add_argument('--mask_type', default='idt', type=str, help='training settings: pdt idt or idt_drop')
     parser.add_argument('--round_per_train', type=int, default=3, help="validate the model per X rounds")
     parser.add_argument('--region_fusion_start_epoch', default=0, type=int, help='warm-up epochs used in rfnet')
-    parser.add_argument('--use_multiprocessing', default=False, help='whether use multiprocessing')
+    parser.add_argument('--use_multiprocessing', action='store_true', default=False, help='whether use multiprocessing')
 
     # FL Settings
     parser.add_argument('--gpus', default='0', help="To use cuda, set to a specific GPU ID. Default set to use CPU.")
