@@ -213,17 +213,44 @@ def group_cluster_and_select(client_gt_list,masks_test):
         if len(gt_data) < 1:
             cluster_centers_dict[mask] = None
             continue
+        
+        
         # 提取当前类别的数据
-        for cl in range(4):
-            gt_data_cl = [item[cl] for item in gt_data if not np.all(item[cl] == 0)]  #默认方法是把全0的去掉，使用的是这一条
-            #gt_data_cl = [item[cl] for item in gt_data]   ##这种方式是如果存在0的原型不删除  因为有可能某一个模态的所有数据原型都是0  
-            # 对当前mask组内的数据进行KMeans聚类
-            n_clusters = 1  # 确保聚类数不超过数据点数
-            kmeans = KMeans(n_clusters=n_clusters, random_state=0).fit(gt_data_cl)
-            # 添加聚类中心
-            cluster_centers.append(kmeans.cluster_centers_[0])
+        # for cl in range(4):
+        #     gt_data_cl = [item[cl] for item in gt_data if not np.all(item[cl] == 0)]  #默认方法是把全0的去掉，使用的是这一条
+        #     #gt_data_cl = [item[cl] for item in gt_data]   ##这种方式是如果存在0的原型不删除  因为有可能某一个模态的所有数据原型都是0  
+        #     # 对当前mask组内的数据进行KMeans聚类
+        #     n_clusters = 1  # 确保聚类数不超过数据点数
+        #     kmeans = KMeans(n_clusters=n_clusters, random_state=0).fit(gt_data_cl)
+        #     # 添加聚类中心
+        #     cluster_centers.append(kmeans.cluster_centers_[0])
+        
+        # for cl in range(4):
+        #     gt_data_cl = [item[cl] for item in gt_data if not np.all(item[cl] == 0)]
+        #     if len(gt_data_cl) == 0:
+        #         cluster_centers_dict[mask] = None
+        #         break
+        #     n_clusters = 1
+        #     kmeans = KMeans(n_clusters=n_clusters, random_state=0).fit(gt_data_cl)
+        #     cluster_centers.append(kmeans.cluster_centers_[0])
 
-        clu_cl = np.stack(cluster_centers, axis=0) 
+        # clu_cl = np.stack(cluster_centers, axis=0) 
+        # clu_cl = torch.from_numpy(clu_cl)
+        # cluster_centers_dict[mask] = clu_cl
+        
+        skip = False
+        for cl in range(4):
+            gt_data_cl = [item[cl] for item in gt_data if not np.all(item[cl] == 0)]
+            if len(gt_data_cl) == 0:
+                cluster_centers_dict[mask] = None
+                skip = True
+                break
+            n_clusters = 1
+            kmeans = KMeans(n_clusters=n_clusters, random_state=0).fit(gt_data_cl)
+            cluster_centers.append(kmeans.cluster_centers_[0])
+        if skip:
+            continue
+        clu_cl = np.stack(cluster_centers, axis=0)
         clu_cl = torch.from_numpy(clu_cl)
         cluster_centers_dict[mask] = clu_cl
     
