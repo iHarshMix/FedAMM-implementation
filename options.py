@@ -56,6 +56,17 @@ def args_parser():
 
     # 说明
     parser.add_argument('--version', type=str, default='debug', help='to explain the experiment set up')
+    
+    # FedAMM+ arguments
+    parser.add_argument('--lambda3', default=0.1, type=float,
+        help='Weight for imputation loss L_imp')
+    parser.add_argument('--warmup_imp_rounds', default=100, type=int,
+        help='Rounds before imputation loss activates (T_w)')
+    parser.add_argument('--warmup_imp_ramp', default=50, type=int,
+        help='Rounds to linearly ramp up lambda3 after warmup (T_r)')
+    parser.add_argument('--use_imputer', action='store_true', default=False,
+        help='Enable FedAMM+ prototype imputer')
+
 
     args = parser.parse_args()
     return args
