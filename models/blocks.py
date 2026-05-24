@@ -624,3 +624,85 @@ class region_aware_modal_fusion(nn.Module):
         ###gain final feat with a short cut
         final_feat = torch.cat((self.region_fusion(region_fused_feat), self.short_cut(y.view(B, -1, H, W, Z))), dim=1)
         return final_feat
+
+class ProtoImputer(nn.Module):
+    """
+    Prototype-Space Cross-Modal Attention Imputer (FedAMM+)
+    
+    For each missing modality m, imputes its class prototype using
+    cross-attention over available modality prototypes.
+    
+    All operations in R^C (prototype space) — no spatial dimensions.
+    Preserves encoder independence (A1).
+    
+    Reference: Revised_Prototype_Imputation.md, Variant 1
+    """
+    def __init__(self, num_cls=4, num_modals=4):
+        super(ProtoImputer, self).__init__()
+        self.num_cls = num_cls
+        self.num_modals = num_modals
+        
+        # Learnable modality query embeddings: one per modality, dim=C
+        self.modal_queries = nn.Embedding(num_modals, num_cls)
+        
+        # Attention scale factor
+        self.scale = num_cls ** -0.5
+        
+        # Output projection
+        self.out_proj = nn.Linear(num_cls, num_cls)
+        
+        # Initialize embeddings
+        nn.init.normal_(self.modal_queries.weight, mean=0.0, std=0.02)
+    
+    def forward(self, available_protos, avail_mask):
+        """
+        Args:
+            available_protos: dict {modal_idx: [B, C]} — available modality prototypes
+            avail_mask: [B, M] boolean — which modalities are available per sample
+        
+        Returns:
+            imputed: dict {modal_idx: [B, C]} — imputed prototypes for missing modalities
+        """
+        B = avail_mask.shape[0]
+        imputed = {}
+        
+        for m in range(self.num_modals):
+            # Skip if no sample in batch is missing modality m
+            missing_in_batch = ~avail_mask[:, m]
+            if not missing_in_batch.any():
+                continue
+            
+            # Query for modality m: [B, C]
+            q = self.modal_queries(
+                torch.tensor(m, device=avail_mask.device)
+            ).unsqueeze(0).expand(B, -1)
+            
+            # Collect keys/values from available modalities (excluding m itself)
+            keys_list = []
+            for a in range(self.num_modals):
+                if a == m:
+                    continue
+                if a in available_protos:
+                    keys_list.append(available_protos[a])  # [B, C]
+            
+            if len(keys_list) == 0:
+                # No available modalities — return zeros
+                imputed[m] = torch.zeros(B, self.num_cls,
+                                         device=avail_mask.device)
+                continue
+            
+            # K, V: [B, |A|, C]
+            K = torch.stack(keys_list, dim=1)
+            V = K.clone()
+            
+            # Scaled dot-product attention
+            q = q.unsqueeze(1)  # [B, 1, C]
+            attn_weights = torch.matmul(q, K.transpose(-2, -1)) * self.scale  # [B, 1, |A|]
+            attn_weights = F.softmax(attn_weights, dim=-1)
+            
+            out = torch.matmul(attn_weights, V).squeeze(1)  # [B, C]
+            out = self.out_proj(out)
+            
+            imputed[m] = out
+        
+        return imputed
