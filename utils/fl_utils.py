@@ -50,3 +50,16 @@ def avg_encoder_weights(w1,w2,w3,w4,client_modal_weight):
     def __getitem__(self, item):
         sample = self.dataset[self.idxs[item]]
         return sample
+    
+def avg_imputer_weights(w1, w2, w3, w4, imputer_weights):
+    """
+    Aggregate imputer parameters weighted by (available x missing) pair counts.
+    imputer_weights: list of 4 floats — one per client, summing to 1.
+    """
+    aggregated = {}
+    for key in w1.keys():
+        sum_weight = 0
+        for i, client_w in enumerate([w1, w2, w3, w4]):
+            sum_weight += client_w[key].data.cpu() * imputer_weights[i]
+        aggregated[key] = sum_weight
+    return aggregated

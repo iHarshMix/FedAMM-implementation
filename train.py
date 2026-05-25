@@ -49,6 +49,7 @@ def local_training(args, device_id, mask, dataloader, model, client_idx,round,cl
     print(f"Training on GPU{device_id}")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     lr_schedule = LR_Scheduler(args.lr, args.c_rounds)
+    model.use_imputer = args.use_imputer   # Change 2: set use_imputer on model
     model.train()
     model = model.to(device)
     start = time.time()
@@ -99,6 +100,7 @@ def local_training(args, device_id, mask, dataloader, model, client_idx,round,cl
         epoch_kl_m = torch.zeros(4).cpu().float()
         epoch_proto_m = torch.zeros(4).cpu().float()
         epoch_dist_m = torch.zeros(4).cpu().float()
+        epoch_imp_losses = torch.zeros(1).cpu().float()   # Change 4: track imputer loss per epoch
 
         b = time.time()
         client_gt = []
@@ -127,7 +129,8 @@ def local_training(args, device_id, mask, dataloader, model, client_idx,round,cl
             rp_iter = torch.zeros(4).cuda().float()
 
             cluster_mask = tuple(mask.cpu().numpy().flatten().tolist())
-            fuse_pred, prm_loss_bs, sep_loss_m_bs, kl_loss_m_bs, proto_loss_m_bs, dist_m_bs,gt = model(x, mask, target=target, temp=args.temp)
+            # Change 3: unpack imp_loss_bs from model forward call
+            fuse_pred, prm_loss_bs, sep_loss_m_bs, kl_loss_m_bs, proto_loss_m_bs, dist_m_bs, gt, imp_loss_bs = model(x, mask, target=target, temp=args.temp)
             
             client_gt.append((cluster_mask,gt.detach().cpu()))
             
@@ -164,13 +167,17 @@ def local_training(args, device_id, mask, dataloader, model, client_idx,round,cl
             proto_loss = (rp_mask * modal_weight * proto_loss_m).sum()
             # dist_loss = (rp_mask * imb_beta * modal_weight * dist_m).sum()
 
+            # Change 5: compute imp_loss scalar with warmup schedule
+            lambda3 = get_lambda3(round, args)
+            imp_loss = torch.sum(imp_loss_bs) * lambda3
+
             ## warmup with shared sep-decoder like rfnet
             if round < args.region_fusion_start_epoch:
                 sep_loss = (imb_beta * modal_weight * sep_loss_m).sum()
                 loss = fuse_loss * 0.0 + sep_loss + prm_loss * 0.0 + kl_loss * 0.0 + proto_loss * 0.0
             else:
                 sep_loss = (rp_mask * imb_beta * modal_weight * sep_loss_m).sum()
-                loss = fuse_loss + sep_loss + prm_loss + kl_loss * 0.5 + proto_loss * 0.1 + global_loss
+                loss = fuse_loss + sep_loss + prm_loss + kl_loss * 0.5 + proto_loss * 0.1 + global_loss + imp_loss  # Change 5: add imp_loss
 
             # ## without warmup and without shared sep-decoder
             # sep_loss = (rp_mask * imb_beta * modal_weight * sep_loss_m).sum()
@@ -188,6 +195,7 @@ def local_training(args, device_id, mask, dataloader, model, client_idx,round,cl
             epoch_proto_losses += (proto_loss/iter_per_epoch).detach().cpu()
             # epoch_dist_losses += (dist_loss/iter_per_epoch).detach().cpu()
             epoch_global_losses += (global_loss/iter_per_epoch).detach().cpu()
+            epoch_imp_losses += (imp_loss / iter_per_epoch).detach().cpu()  # Change 6: track imp_loss
 
             if args.mask_type == 'idt':
                 epoch_kl_m += (kl_loss_m/modal_num).detach().cpu()
@@ -202,6 +210,7 @@ def local_training(args, device_id, mask, dataloader, model, client_idx,round,cl
 
             msg = 'Epoch {}/{}, Iter {}/{}, Loss {:.4f}, '.format((epoch+1), args.local_ep, (i+1), iter_per_epoch, loss.item())
             msg += 'fuse_loss:{:.4f}, prm_loss:{:.4f}, '.format(fuse_loss.item(), prm_loss.item())
+            msg += 'imp_loss:{:.4f}, '.format(imp_loss.item())  # Change 6: log imp_loss
             msg += 'sep_loss:{:.4f}, '.format(sep_loss.item())
             msg += 'kl_loss:{:.4f}, proto_loss:{:.4f},'.format(kl_loss.item(), proto_loss.item())
             msg += 'seplist:[{:.4f},{:.4f},{:.4f},{:.4f}] '.format(sep_loss_m[0].item(), sep_loss_m[1].item(), sep_loss_m[2].item(), sep_loss_m[3].item())
@@ -233,9 +242,11 @@ def local_training(args, device_id, mask, dataloader, model, client_idx,round,cl
         logging.info('rp_epoch:[{:.4f},{:.4f},{:.4f},{:.4f}]'.format(rp_epoch[0].item(), rp_epoch[1].item(), rp_epoch[2].item(), rp_epoch[3].item()))
         logging.info('imb_beta:[{:.4f},{:.4f},{:.4f},{:.4f}]'.format(imb_beta[0].item(), imb_beta[1].item(), imb_beta[2].item(), imb_beta[3].item()))
 
+        # Change 7: add epoch_imp_losses to epoch_loss dict
         epoch_loss = {'epoch_losses':epoch_losses, 'epoch_fuse_losses':epoch_fuse_losses, 'epoch_prm_losses':epoch_prm_losses, 'epoch_sep_losses':epoch_sep_losses,
                         'epoch_kl_losses':epoch_kl_losses, 'epoch_proto_losses':epoch_proto_losses, 'epoch_kl_m':epoch_kl_m, 'epoch_sep_m':epoch_sep_m,
-                        'epoch_proto_m':epoch_proto_m, 'epoch_dist_m':epoch_dist_m, 'rp_epoch':rp_epoch, 'epoch_global_losses':epoch_global_losses,"lr":step_lr}
+                        'epoch_proto_m':epoch_proto_m, 'epoch_dist_m':epoch_dist_m, 'rp_epoch':rp_epoch, 'epoch_global_losses':epoch_global_losses,
+                        'epoch_imp_losses':epoch_imp_losses, "lr":step_lr}
     
     msg = 'client_{} local training total time: {:.4f} hours'.format(client_idx+1, (time.time() - start)/3600)
     print(msg)
@@ -254,6 +265,7 @@ def log_client_train(writer, client_i, local_losses, round):
     writer.add_scalar('Client_{}/epoch_kl_losses'.format(client_i+1), local_losses['epoch_kl_losses'].item(), global_step=round)
     writer.add_scalar('Client_{}/epoch_proto_losses'.format(client_i+1), local_losses['epoch_proto_losses'].item(), global_step=round)
     writer.add_scalar('Client_{}/epoch_global_losses'.format(client_i+1), local_losses['epoch_global_losses'].item(), global_step=round)
+    writer.add_scalar('Client_{}/epoch_imp_losses'.format(client_i+1), local_losses['epoch_imp_losses'].item(), global_step=round)  # Change 8 (log_client_train)
     writer.add_scalar('Client_{}/lr'.format(client_i+1), local_losses['lr'].item(), global_step=round)
     for m in range(4):
         writer.add_scalar('Client_{}/kl_m{}'.format(client_i+1, m), local_losses['epoch_kl_m'][m].item(), global_step=round)
@@ -261,24 +273,59 @@ def log_client_train(writer, client_i, local_losses, round):
         writer.add_scalar('Client_{}/proto_m{}'.format(client_i+1, m), local_losses['epoch_proto_m'][m].item(), global_step=round)
         writer.add_scalar('Client_{}/dist_m{}'.format(client_i+1, m), local_losses['epoch_dist_m'][m].item(), global_step=round)
         writer.add_scalar('Client_{}/rp_m{}'.format(client_i+1, m), local_losses['rp_epoch'][m].item(), global_step=round)
-    
-def uploadLCweightsandGLBupdate(server_model,local_weights,client_mask_proportions_sum,client_modal_weight,model_clients):
-    glb_w = avg_local_weights(local_weights[0], local_weights[1], local_weights[2], local_weights[3],client_mask_proportions_sum)
+
+# Change 8: updated uploadLCweightsandGLBupdate with imputer aggregation support
+def uploadLCweightsandGLBupdate(server_model, local_weights, client_mask_proportions_sum,
+                                  client_modal_weight, model_clients,
+                                  use_imputer=False, imputer_weights=None):
+    glb_w = avg_local_weights(local_weights[0], local_weights[1], local_weights[2], local_weights[3], client_mask_proportions_sum)
     server_model.load_state_dict(glb_w)
-    flair_encoder = avg_encoder_weights(model_clients[0].flair_encoder.state_dict(), model_clients[1].flair_encoder.state_dict(), model_clients[2].flair_encoder.state_dict(), model_clients[3].flair_encoder.state_dict(),client_modal_weight.T[0])
-    t1ce_encoder = avg_encoder_weights(model_clients[0].t1ce_encoder.state_dict(), model_clients[1].t1ce_encoder.state_dict(), model_clients[2].t1ce_encoder.state_dict(), model_clients[3].t1ce_encoder.state_dict(),client_modal_weight.T[1])
-    t1_encoder = avg_encoder_weights(model_clients[0].t1_encoder.state_dict(), model_clients[1].t1_encoder.state_dict(), model_clients[2].t1_encoder.state_dict(), model_clients[3].t1_encoder.state_dict(),client_modal_weight.T[2])
-    t2_encoder = avg_encoder_weights(model_clients[0].t2_encoder.state_dict(), model_clients[1].t2_encoder.state_dict(), model_clients[2].t2_encoder.state_dict(), model_clients[3].t2_encoder.state_dict(),client_modal_weight.T[3])
+    flair_encoder = avg_encoder_weights(model_clients[0].flair_encoder.state_dict(), model_clients[1].flair_encoder.state_dict(), model_clients[2].flair_encoder.state_dict(), model_clients[3].flair_encoder.state_dict(), client_modal_weight.T[0])
+    t1ce_encoder  = avg_encoder_weights(model_clients[0].t1ce_encoder.state_dict(),  model_clients[1].t1ce_encoder.state_dict(),  model_clients[2].t1ce_encoder.state_dict(),  model_clients[3].t1ce_encoder.state_dict(),  client_modal_weight.T[1])
+    t1_encoder    = avg_encoder_weights(model_clients[0].t1_encoder.state_dict(),    model_clients[1].t1_encoder.state_dict(),    model_clients[2].t1_encoder.state_dict(),    model_clients[3].t1_encoder.state_dict(),    client_modal_weight.T[2])
+    t2_encoder    = avg_encoder_weights(model_clients[0].t2_encoder.state_dict(),    model_clients[1].t2_encoder.state_dict(),    model_clients[2].t2_encoder.state_dict(),    model_clients[3].t2_encoder.state_dict(),    client_modal_weight.T[3])
     server_model.flair_encoder.load_state_dict(flair_encoder)
     server_model.t1ce_encoder.load_state_dict(t1ce_encoder)
     server_model.t1_encoder.load_state_dict(t1_encoder)
     server_model.t2_encoder.load_state_dict(t2_encoder)
+
+    # NEW: aggregate imputer weights
+    if use_imputer and imputer_weights is not None:
+        from utils.fl_utils import avg_imputer_weights
+        imputer_w = avg_imputer_weights(
+            model_clients[0].proto_imputer.state_dict(),
+            model_clients[1].proto_imputer.state_dict(),
+            model_clients[2].proto_imputer.state_dict(),
+            model_clients[3].proto_imputer.state_dict(),
+            imputer_weights
+        )
+        server_model.proto_imputer.load_state_dict(imputer_w)
+
     return server_model
 
 def downloadGLBweights(server_model, model_clients):
     for i in range(len(model_clients)):
         model_clients[i].load_state_dict(server_model.state_dict())
     return model_clients
+
+# Change 1: warmup schedule for lambda3 (imputation loss weight)
+def get_lambda3(round_num, args):
+    """
+    Warmup schedule for lambda3 (imputation loss weight).
+    Returns 0 during warmup, then linearly ramps to args.lambda3, then stays.
+    T_w = args.warmup_imp_rounds (default 100)
+    T_r = args.warmup_imp_ramp  (default 50)
+    """
+    if not args.use_imputer:
+        return 0.0
+    T_w = args.warmup_imp_rounds
+    T_r = args.warmup_imp_ramp
+    if round_num <= T_w:
+        return 0.0
+    elif round_num <= T_w + T_r:
+        return args.lambda3 * (round_num - T_w) / T_r
+    else:
+        return args.lambda3
 
 if __name__ == '__main__':
 
@@ -439,8 +486,32 @@ if __name__ == '__main__':
         cluster_centers = criterions.EMA_cls_Fs(cluster_centers, new_cluster_centers)
         #criterions.test_clustering(client_gt_list, cluster_centers)    
 
+        # Change 8: compute imputer aggregation weights before global update
+        if args.use_imputer:
+            imputer_pair_counts = []
+            for client_idx in range(args.client_num):
+                imb_data = pd.read_csv(args.train_file[client_idx+1])
+                pair_count = 0
+                for sample_mask in imb_data['mask']:
+                    m = eval(sample_mask)
+                    avail = sum(m)
+                    missing = 4 - avail
+                    pair_count += avail * missing
+                imputer_pair_counts.append(pair_count)
+            total_pairs = sum(imputer_pair_counts)
+            imputer_weights = [c / total_pairs if total_pairs > 0 else 0.25
+                               for c in imputer_pair_counts]
+            logging.info(f'Imputer aggregation weights: {imputer_weights}')
+        else:
+            imputer_weights = None
+
+        logging.info(f'Round {round}: lambda3 = {get_lambda3(round, args):.4f}')
+
         # global Aggre and Fusion
-        server_model = uploadLCweightsandGLBupdate(server_model,local_weights,client_mask_proportions_sum,client_modal_weight,model_clients)
+        server_model = uploadLCweightsandGLBupdate(server_model, local_weights, client_mask_proportions_sum,
+                                                    client_modal_weight, model_clients,
+                                                    use_imputer=args.use_imputer,
+                                                    imputer_weights=imputer_weights)
         downloadGLBweights(server_model, model_clients)
         ##### Eval the model after aggregation and 10 round
         if (round+1)%args.round_per_train == 0:# and round>200:
@@ -491,4 +562,4 @@ if __name__ == '__main__':
             'best_dices': best_dices
             }, args.modelfile_path + '/last.pth')
             
-    writer.close()    
+    writer.close()
