@@ -8,7 +8,7 @@ from models.blocks import (general_conv3d, normalization, prm_generator_pk,
                     ProtoImputer)   # FedAMM+: added ProtoImputer
 from utils.criterions import (temp_kl_loss_bs, softmax_weighted_loss_bs,
                                dice_loss_bs, prototype_loss_bs, gt_prototype,
-                               imputation_loss_bs)   # FedAMM+: added imputation_loss_bs
+                               imputation_loss_bs, closed_form_impute)   # P7: added closed_form_impute
 
 basic_dims = 8
 H = W = Z = 80
@@ -194,7 +194,11 @@ class Model(nn.Module):
 
         # ── FedAMM+ ──────────────────────────────────────────────────────────
         self.proto_imputer = ProtoImputer(num_cls=num_cls, num_modals=num_modals)
-        self.use_imputer = False   # set to True by train.py when --use_imputer is passed
+        self.use_imputer = False      # set to True by train.py when --use_imputer is passed
+        # P7: which variant to run — 1=learned ProtoImputer, 2=closed-form interpolation
+        self.imputer_variant = 1
+        # P7: per-modality global centroids for Variant 2 (set each round by train.py)
+        self.global_centroids = None
         # ─────────────────────────────────────────────────────────────────────
 
         self.is_training = False
@@ -247,10 +251,8 @@ class Model(nn.Module):
         proto_list = []
         for c in range(num_cls):
             targeti = target[:, c, :, :, :]                              # [B, H, W, Z]
-            # weighted spatial mean of features over class-c voxels
             proto_c = (torch.sum(de_f * targeti[:, None], dim=(-3, -2, -1)) /
                        (torch.sum(targeti[:, None], dim=(-3, -2, -1)) + eps))  # [B, ch]
-            # collapse channel dim → scalar per sample
             proto_c = proto_c.mean(dim=1, keepdim=True)                  # [B, 1]
             proto_list.append(proto_c)
         return torch.cat(proto_list, dim=1)                              # [B, num_cls]
@@ -408,10 +410,17 @@ class Model(nn.Module):
                 modal_protos = {mi: self._extract_teacher_proto(de_f_mi, target, num_cls)
                                 for mi, de_f_mi in enumerate(modal_de_fs)}
 
-                # Run cross-attention imputer → imputed protos for missing modalities
-                imputed_protos = self.proto_imputer(modal_protos, mask)
+                # ── P7: branch on imputer_variant ─────────────────────────────
+                if self.imputer_variant == 1:
+                    # Variant 1: learned cross-attention ProtoImputer
+                    imputed_protos = self.proto_imputer(modal_protos, mask)
+                else:
+                    # Variant 2: parameter-free closed-form interpolation
+                    imputed_protos = closed_form_impute(
+                        modal_protos, mask, self.global_centroids, num_cls=num_cls)
+                # ─────────────────────────────────────────────────────────────
 
-                # Cosine imputation loss [B, 1]
+                # Cosine imputation loss [B, 1] — identical for both variants
                 imp_loss = imputation_loss_bs(
                     imputed_protos, teacher_proto, mask, num_cls=num_cls)
             # ── End FedAMM+ ───────────────────────────────────────────────────

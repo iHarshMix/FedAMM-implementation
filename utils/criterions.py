@@ -135,28 +135,28 @@ def cluster_and_select(client_gt_list):
     for cl in range(4):
         gt_data_cl = [item[cl] for item in gt_data]
         kmeans = KMeans(n_clusters=15, random_state=0).fit(gt_data_cl)
-        
+
         cluster_centers = []
         for i in range(15):
             cluster_indices = np.where(kmeans.labels_ == i)[0]
             cluster_data = [client_gt_list[j] for j in cluster_indices]
-            
+
             masks = [item[0] for item in cluster_data]
             masks = [tuple(item[0].numpy().flatten().tolist()) for item in cluster_data]
 
             most_common_mask = max(set(masks), key=masks.count)
-            
+
             filtered_data = [item for item in cluster_data if tuple(item[0].numpy().flatten().tolist()) == most_common_mask]
-            
+
             if not filtered_data:
                 continue
-            
+
             sub_gt_data = [item[1][cl].numpy().astype('float32') for item in filtered_data]
             sub_kmeans = KMeans(n_clusters=1, random_state=0).fit(sub_gt_data)
-            
+
             cluster_centers.append((most_common_mask, sub_kmeans.cluster_centers_[0]))
         cluster_centers_cl.append(cluster_centers)
-    
+
     return cluster_centers_cl
 
 def test_clustering(client_gt_list, cluster_centers_cl):
@@ -173,11 +173,11 @@ def test_clustering(client_gt_list, cluster_centers_cl):
                 if distance < min_distance:
                     min_distance = distance
                 closest_center = center
-        
+
             if mask == closest_center[0]:
                 correct += 1
             total += 1
-        
+
         accuracy = correct / total
         print(f'class {cl} accuracy: {accuracy:.2f}')
     return accuracy
@@ -188,15 +188,15 @@ def group_cluster_and_select(client_gt_list, masks_test):
     for mask_key, gt in client_gt_list:
         if mask_key in mask_groups:
             mask_groups[mask_key].append(gt.numpy().astype('float32'))
-    
+
     cluster_centers_dict = {tuple(mask): [] for mask in masks_test}
     for mask, gt_data in mask_groups.items():
         cluster_centers = []
-        
+
         if len(gt_data) < 1:
             cluster_centers_dict[mask] = None
             continue
-        
+
         skip = False
         for cl in range(4):
             gt_data_cl = [item[cl] for item in gt_data if not np.all(item[cl] == 0)]
@@ -212,7 +212,7 @@ def group_cluster_and_select(client_gt_list, masks_test):
         clu_cl = np.stack(cluster_centers, axis=0)
         clu_cl = torch.from_numpy(clu_cl)
         cluster_centers_dict[mask] = clu_cl
-    
+
     return cluster_centers_dict
 
 def EMA_cls_Fs(prior_Fs, glb_protos):
@@ -267,27 +267,119 @@ def imputation_loss_bs(imputed_protos, teacher_proto, avail_mask, num_cls=4, eps
     total_loss = torch.zeros(B, device=device)
 
     # Stop-gradient on teacher: gradients must NOT flow back through the teacher.
-    # This prevents the teacher (fused decoder features) from collapsing toward
-    # the imputed student output.
     p_t = teacher_proto.detach()                        # [B, C]
 
     for m, p_hat in imputed_protos.items():
         # p_hat: [B, C] — imputed prototype for modality m
-
-        # Cosine similarity in prototype space: [B]
-        cos_sim = F.cosine_similarity(p_hat, p_t, dim=-1, eps=eps)
-
-        # Cosine distance (bounded [0, 2]): [B]
-        cos_dist = 1.0 - cos_sim
-
-        # Apply only to samples where modality m IS actually missing.
-        # ProtoImputer already skips present modalities, but this mask
-        # makes the function safe if imputed_protos contains extra keys.
-        missing_m = (~avail_mask[:, m]).float()         # [B]
+        cos_sim = F.cosine_similarity(p_hat, p_t, dim=-1, eps=eps)  # [B]
+        cos_dist = 1.0 - cos_sim                                     # [B]
+        missing_m = (~avail_mask[:, m]).float()                      # [B]
         total_loss = total_loss + cos_dist * missing_m
 
-    # Normalize by number of missing modalities per sample
-    loss = total_loss / num_missing                     # [B]
-    loss = loss.unsqueeze(1)                            # [B, 1]
+    loss = total_loss / num_missing     # [B]
+    loss = loss.unsqueeze(1)            # [B, 1]
 
     return loss
+
+
+def closed_form_impute(available_protos, avail_mask, global_centroids, num_cls=4, eps=1e-8):
+    """
+    Variant 2: Closed-form prototype interpolation (parameter-free ablation).
+
+    For each missing modality m, estimates its prototype as a cosine-similarity-
+    weighted average of the available modality prototypes:
+
+        P_hat^m = sum_{a in A_n} alpha^{ma} * P^a
+
+    where the interpolation weights come from global prototype centroids:
+
+        alpha^{ma} = cos(P^{g,m}, P^{g,a}) / sum_{a'} cos(P^{g,m}, P^{g,a'})
+
+    global_centroids is a dict {modal_idx: [C] tensor} built in train.py
+    each round from cluster_centers (the server-side K-means centroids).
+
+    When global_centroids is None (early rounds before cluster_centers is
+    populated), falls back to a simple uniform mean of available prototypes.
+
+    Args:
+        available_protos:  dict {modal_idx: [B, C]} — per-modality prototypes
+                           (only present modalities are in this dict)
+        avail_mask:        [B, M] bool tensor — which modalities are available
+        global_centroids:  dict {modal_idx: [C] tensor} or None
+        num_cls:           C = prototype dimension = 4
+        eps:               numerical stability
+
+    Returns:
+        imputed: dict {modal_idx: [B, C]} — estimated prototypes for missing
+                 modalities only (same interface as ProtoImputer.forward)
+    """
+    M = avail_mask.shape[1]
+    B = avail_mask.shape[0]
+    device = avail_mask.device
+
+    # Determine a reference shape for zero tensors
+    if len(available_protos) > 0:
+        ref_shape = next(iter(available_protos.values())).shape   # [B, C]
+    else:
+        ref_shape = (B, num_cls)
+
+    imputed = {}
+
+    # ── Fallback: no centroids yet → uniform mean of available protos ─────────
+    if global_centroids is None:
+        for m in range(M):
+            if avail_mask[:, m].all():   # all samples have this modality → skip
+                continue
+            avail_list = [available_protos[a] for a in range(M)
+                          if a != m and a in available_protos]
+            if len(avail_list) == 0:
+                imputed[m] = torch.zeros(ref_shape, device=device)
+            else:
+                imputed[m] = torch.stack(avail_list, dim=0).mean(dim=0)
+        return imputed
+
+    # ── Main path: cosine-similarity weights from global centroids ────────────
+    for m in range(M):
+        # Only impute modalities that are missing in at least one batch sample
+        missing_in_batch = ~avail_mask[:, m]   # [B]
+        if not missing_in_batch.any():
+            continue
+
+        # Missing modality m has no centroid yet → uniform fallback
+        if m not in global_centroids:
+            avail_list = [available_protos[a] for a in available_protos if a != m]
+            imputed[m] = (torch.stack(avail_list, dim=0).mean(dim=0)
+                          if avail_list else torch.zeros(ref_shape, device=device))
+            continue
+
+        g_m = global_centroids[m].to(device).float()   # [C]
+
+        # Compute per-available-modality cosine similarity weights
+        alpha = {}
+        total_sim = 0.0
+        for a in range(M):
+            if a == m or a not in available_protos or a not in global_centroids:
+                continue
+            g_a = global_centroids[a].to(device).float()   # [C]
+            sim = F.cosine_similarity(
+                g_m.unsqueeze(0), g_a.unsqueeze(0), dim=-1, eps=eps
+            ).item()
+            sim = max(sim, 0.0)   # clamp negative similarities to 0
+            alpha[a] = sim
+            total_sim += sim
+
+        # No positive similarity → uniform mean of available protos
+        if total_sim < eps or len(alpha) == 0:
+            avail_list = [available_protos[a] for a in available_protos if a != m]
+            imputed[m] = (torch.stack(avail_list, dim=0).mean(dim=0)
+                          if avail_list else torch.zeros(ref_shape, device=device))
+            continue
+
+        # Weighted sum: [B, C]
+        result = torch.zeros(ref_shape, device=device)
+        for a, sim in alpha.items():
+            result = result + (sim / total_sim) * available_protos[a]
+
+        imputed[m] = result
+
+    return imputed

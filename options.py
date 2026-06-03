@@ -40,23 +40,21 @@ def args_parser():
     parser.add_argument('--client_num', type=int, default=4, help="number of users: K")
     parser.add_argument('--iid', type=int, default=1, help='Default set to IID. Set to 0 for non-IID.')
     # files
-    
-    
-    parser.add_argument('--train_file', type=dict, 
-                default={ 
-                1:"./datalist/dir_brats_split/1024_0.01/client_part_1_imb.csv", 
-                2:"./datalist/dir_brats_split/1024_0.01/client_part_2_imb.csv", 
-                3:"./datalist/dir_brats_split/1024_0.01/client_part_3_imb.csv", 
+
+    parser.add_argument('--train_file', type=dict,
+                default={
+                1:"./datalist/dir_brats_split/1024_0.01/client_part_1_imb.csv",
+                2:"./datalist/dir_brats_split/1024_0.01/client_part_2_imb.csv",
+                3:"./datalist/dir_brats_split/1024_0.01/client_part_3_imb.csv",
                 4:"./datalist/dir_brats_split/1024_0.01/client_part_4_imb.csv"})
     parser.add_argument('--valid_file', type=str, default="./datalist/BRATS2020_Training_none_npy/val.txt")
-    
-    
+
     parser.add_argument('--test_file', type=str, default="./datalist/BRATS2020_Training_none_npy/test.txt")
     parser.add_argument("--device_ids", type=str, default='0,0,0,0')
 
     # 说明
     parser.add_argument('--version', type=str, default='debug', help='to explain the experiment set up')
-    
+
     # FedAMM+ arguments
     parser.add_argument('--lambda3', default=0.1, type=float,
         help='Weight for imputation loss L_imp')
@@ -66,7 +64,10 @@ def args_parser():
         help='Rounds to linearly ramp up lambda3 after warmup (T_r)')
     parser.add_argument('--use_imputer', action='store_true', default=False,
         help='Enable FedAMM+ prototype imputer')
-
+    # P7: which imputer variant to use
+    parser.add_argument('--imputer_variant', default=1, type=int,
+        help='1=learned cross-attention ProtoImputer (Variant 1, default), '
+             '2=parameter-free closed-form interpolation (Variant 2 ablation baseline)')
 
     args = parser.parse_args()
     return args
